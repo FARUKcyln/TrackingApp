@@ -14,14 +14,15 @@
             android:name="com.google.android.gms.maps.SupportMapFragment"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1.5"
+            android:layout_weight="1.20"
             tools:context=".MapsActivity" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recListView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="0.5">
+            android:layout_marginTop="10dp"
+            android:layout_weight="0.70">
 
         </androidx.recyclerview.widget.RecyclerView>
 

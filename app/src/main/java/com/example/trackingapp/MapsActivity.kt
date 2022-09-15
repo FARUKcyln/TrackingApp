@@ -6,13 +6,16 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.Window
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContentProviderCompat.requireContext
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.trackingapp.adapter.UserListAdapter
 import com.example.trackingapp.databinding.ActivityMapsBinding
 import com.example.trackingapp.models.User
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -21,19 +24,21 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.*
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.tasks.CancellationToken
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.tasks.OnTokenCanceledListener
-import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.*
 
 
-class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationSource.OnLocationChangedListener {
+class MapsActivity : AppCompatActivity(), OnMapReadyCallback,
+    LocationSource.OnLocationChangedListener {
 
     private lateinit var mMap: GoogleMap
     private lateinit var fusedLocationProviderClient: FusedLocationProviderClient
     private lateinit var binding: ActivityMapsBinding
-    private lateinit var location: Location
+    private lateinit var userId: String
 
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +62,21 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationSource.OnL
             requestPermission()
         }
 
+        userId = "-NBqcS-bigWl4u_TtubU"
+
+
+        val database = FirebaseDatabase.getInstance()
+        database.reference.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                mMap.clear()
+                placeUsersOnMap()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                TODO("Not yet implemented")
+            }
+
+        })
 
         // initialize fused location client
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
@@ -64,7 +84,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationSource.OnL
         getCurrentLocation()
 
     }
-
 
     @SuppressLint("MissingPermission")
     private fun getCurrentLocation() {
@@ -81,18 +100,22 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationSource.OnL
                     if (location == null)
                         Toast.makeText(this, "Cannot get location.", Toast.LENGTH_SHORT).show()
                     else {
-                        this.location = location
-
-
-                        // Add a marker in my location and move the camera
-                        val myLocation = LatLng(location.latitude, location.longitude)
-                        mMap.addMarker(MarkerOptions().position(myLocation))
-                        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(myLocation, 12f))
+                        println(location.toString())
+                        updateMyCurrentLocation(location)
                     }
-
                 }
         }
+    }
 
+    private fun moveMapCameraToCurrentLocation(location: Location) {
+        val myLocation = LatLng(location.latitude, location.longitude)
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(myLocation, 6f))
+    }
+
+    private fun updateMyCurrentLocation(location: Location) {
+        val database = FirebaseDatabase.getInstance().getReference("Users").child(userId)
+        database.child("latitude").setValue(location.latitude)
+        database.child("longitude").setValue(location.longitude)
     }
 
     private fun checkPermission(): Boolean {
@@ -130,19 +153,52 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationSource.OnL
      */
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
-
     }
-
 
     private fun placeUsersOnMap() {
         val database = FirebaseDatabase.getInstance().getReference("Users")
-
         database.get().addOnSuccessListener {
-            val users: List<User> = it.value as List<User>
+            val users = mutableListOf<User>()
+            it.children.forEach { result ->
+                users.add(
+                    User(
+                        result.child("fullName").value as String?,
+                        result.child("latitude").value as Double?,
+                        result.child("longitude").value as Double?
+                    )
+                )
+            }
+
+            var avgLat: Double = 0.0
+            var avgLng: Double = 0.0
 
             for (user in users) {
-                println(user.fullName)
+                avgLat += user.latitude!!
+                avgLng += user.longitude!!
+                val userLocation = user.latitude?.let { lat ->
+                    user.longitude?.let { lng ->
+                        LatLng(
+                            lat,
+                            lng
+                        )
+                    }
+                }
+                userLocation?.let { it1 ->
+                    MarkerOptions().position(it1).title(user.fullName)
+                }
+                    ?.let { it2 -> mMap.addMarker(it2) }
             }
+
+            if (users.size != 0) {
+                avgLng /= users.size
+                avgLat /= users.size
+            }
+
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(avgLat,avgLng), 7f))
+            //mMap.setLatLngBoundsForCameraTarget(bound.build())
+            val userListAdapter = UserListAdapter(this, users as ArrayList<User>, mMap)
+            binding.recListView.layoutManager = LinearLayoutManager(this)
+            binding.recListView.adapter = userListAdapter
 
         }.addOnFailureListener {
             Toast.makeText(this, "Failed", Toast.LENGTH_SHORT).show()
@@ -150,8 +206,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationSource.OnL
     }
 
     override fun onLocationChanged(p0: Location) {
-        TODO("Not yet implemented")
+        updateMyCurrentLocation(p0)
     }
-
-
 }
